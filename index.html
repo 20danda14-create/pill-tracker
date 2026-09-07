@@ -43,6 +43,11 @@
       box-sizing: border-box;
       font-size: 1rem;
     }
+    .time-inputs {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 0.5rem;
+    }
     button {
       background: var(--primary);
       color: white;
@@ -62,6 +67,11 @@
       border-bottom: 1px solid var(--border);
     }
     .pill-item:last-child, .log-item:last-child { border-bottom: none; }
+    .badge-group {
+      display: flex;
+      gap: 0.25rem;
+      margin-top: 0.25rem;
+    }
     .badge {
       font-size: 0.75rem;
       padding: 0.25rem 0.5rem;
@@ -87,11 +97,20 @@
       </div>
       <div class="form-group">
         <label for="med-dosage">Dosage / Notes</label>
-        <input type="text" id="med-dosage" placeholder="e.g., 1 tablet after breakfast">
+        <input type="text" id="med-dosage" placeholder="e.g., 1 tablet after meals">
       </div>
       <div class="form-group">
-        <label for="med-time">Reminder Time</label>
-        <input type="time" id="med-time" required>
+        <label>Reminder Times (Twice a Day)</label>
+        <div class="time-inputs">
+          <div>
+            <label style="font-weight: normal; font-size: 0.8rem;">Dose 1 Time</label>
+            <input type="time" id="med-time-1" required>
+          </div>
+          <div>
+            <label style="font-weight: normal; font-size: 0.8rem;">Dose 2 Time (Optional)</label>
+            <input type="time" id="med-time-2">
+          </div>
+        </div>
       </div>
       <button type="submit">Save Medication</button>
     </form>
@@ -108,7 +127,7 @@
   </div>
 
   <script>
-    // PASTE YOUR GOOGLE APPS SCRIPT WEB APP URL HERE:
+    https://script.google.com/macros/s/AKfycbzIQi7ir1Sb6nXOl-3YTxdVYsjpXsEVG-BrKGY-4iulbsdcG-myL4mYlN9YEGso3UIvHQ/exec
     const GOOGLE_SCRIPT_URL = "YOUR_GOOGLE_APPS_SCRIPT_WEB_APP_URL";
 
     let meds = JSON.parse(localStorage.getItem('meds') || '[]');
@@ -132,12 +151,21 @@
 
     document.getElementById('med-form').addEventListener('submit', (e) => {
       e.preventDefault();
+      
+      const time1 = document.getElementById('med-time-1').value;
+      const time2 = document.getElementById('med-time-2').value;
+      
+      // Store times as an array
+      const times = [time1];
+      if (time2) times.push(time2);
+
       const newMed = {
         id: Date.now(),
         name: document.getElementById('med-name').value,
         dosage: document.getElementById('med-dosage').value,
-        time: document.getElementById('med-time').value
+        times: times
       };
+
       meds.push(newMed);
       saveState();
       e.target.reset();
@@ -203,18 +231,26 @@
       if (meds.length === 0) {
         listEl.innerHTML = '<p style="text-align:center; color:#64748b;">No active medications.</p>';
       } else {
-        listEl.innerHTML = meds.map(m => `
-          <div class="pill-item">
-            <div>
-              <strong>${m.name}</strong> <span class="badge">${m.time}</span>
-              <div style="font-size:0.85rem; color:#64748b;">${m.dosage}</div>
+        listEl.innerHTML = meds.map(m => {
+          // Backward compatibility check for single-time format
+          const timeList = m.times || (m.time ? [m.time] : []);
+          
+          return `
+            <div class="pill-item">
+              <div>
+                <strong>${m.name}</strong>
+                <div class="badge-group">
+                  ${timeList.map(t => `<span class="badge">⏰ ${t}</span>`).join('')}
+                </div>
+                <div style="font-size:0.85rem; color:#64748b; margin-top: 0.25rem;">${m.dosage}</div>
+              </div>
+              <div>
+                <button class="btn-take" onclick="logDose(${m.id})">Take Dose</button>
+                <button class="btn-delete" onclick="deleteMed(${m.id})">Remove</button>
+              </div>
             </div>
-            <div>
-              <button class="btn-take" onclick="logDose(${m.id})">Take Dose</button>
-              <button class="btn-delete" onclick="deleteMed(${m.id})">Remove</button>
-            </div>
-          </div>
-        `).join('');
+          `;
+        }).join('');
       }
 
       if (logs.length === 0) {
@@ -236,10 +272,12 @@
     setInterval(() => {
       const now = new Date();
       const currentTime = `${String(now.getHours()).padStart(2, '0')}:${String(now.getMinutes()).padStart(2, '0')}`;
+      
       if (now.getSeconds() < 30) {
         meds.forEach(m => {
-          if (m.time === currentTime && Notification.permission === 'granted') {
-            new Notification(`Pill Reminder: ${m.name}`, { body: `Take ${m.dosage || 'dose'}.` });
+          const timeList = m.times || (m.time ? [m.time] : []);
+          if (timeList.includes(currentTime) && Notification.permission === 'granted') {
+            new Notification(`Pill Reminder: ${m.name}`, { body: `Time to take ${m.dosage || 'your dose'}.` });
           }
         });
       }
