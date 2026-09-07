@@ -12,6 +12,7 @@
       --text: #0f172a;
       --border: #e2e8f0;
       --success: #16a34a;
+      --danger: #ef4444;
     }
     body {
       font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
@@ -32,9 +33,7 @@
       margin-bottom: 1rem;
       box-shadow: 0 1px 3px rgba(0,0,0,0.05);
     }
-    .form-group {
-      margin-bottom: 0.75rem;
-    }
+    .form-group { margin-bottom: 0.75rem; }
     label { display: block; font-size: 0.875rem; margin-bottom: 0.25rem; font-weight: 600; }
     input, button {
       width: 100%;
@@ -54,6 +53,7 @@
     }
     button:hover { opacity: 0.9; }
     .btn-take { background: var(--success); }
+    .btn-delete { background: var(--danger); margin-top: 0.25rem; }
     .pill-item, .log-item {
       display: flex;
       justify-content: space-between;
@@ -103,11 +103,14 @@
   </div>
 
   <div class="card">
-    <h2>Usage Log (History)</h2>
-    <div id="usage-log">No doses logged yet.</div>
+    <h2>Usage Log (Google Sheets)</h2>
+    <div id="usage-log">Loading history...</div>
   </div>
 
   <script>
+    // PASTE YOUR GOOGLE APPS SCRIPT WEB APP URL HERE:
+    const GOOGLE_SCRIPT_URL = "YOUR_GOOGLE_APPS_SCRIPT_WEB_APP_URL";
+
     let meds = JSON.parse(localStorage.getItem('meds') || '[]');
     let logs = JSON.parse(localStorage.getItem('logs') || '[]');
 
@@ -123,7 +126,7 @@
           alert(perm === 'granted' ? 'Notifications enabled!' : 'Permission denied.');
         });
       } else {
-        alert('Browser does not support desktop notifications.');
+        alert('Browser does not support notifications.');
       }
     }
 
@@ -140,20 +143,57 @@
       e.target.reset();
     });
 
-    function logDose(medId) {
+    async function logDose(medId) {
       const med = meds.find(m => m.id === medId);
       if (!med) return;
-      logs.unshift({
+
+      const logEntry = {
         medName: med.name,
         dosage: med.dosage,
         timestamp: new Date().toLocaleString()
-      });
+      };
+
+      // Update UI immediately
+      logs.unshift(logEntry);
       saveState();
+
+      // Post to Google Sheets
+      if (GOOGLE_SCRIPT_URL && GOOGLE_SCRIPT_URL !== "YOUR_GOOGLE_APPS_SCRIPT_WEB_APP_URL") {
+        try {
+          await fetch(GOOGLE_SCRIPT_URL, {
+            method: "POST",
+            mode: "no-cors",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify(logEntry)
+          });
+        } catch (err) {
+          console.error("Sheet sync failed:", err);
+        }
+      }
     }
 
     function deleteMed(medId) {
       meds = meds.filter(m => m.id !== medId);
       saveState();
+    }
+
+    async function fetchSheetLogs() {
+      if (!GOOGLE_SCRIPT_URL || GOOGLE_SCRIPT_URL === "YOUR_GOOGLE_APPS_SCRIPT_WEB_APP_URL") {
+        render();
+        return;
+      }
+      try {
+        const response = await fetch(GOOGLE_SCRIPT_URL);
+        const data = await response.json();
+        if (data.status === "success" && Array.isArray(data.logs)) {
+          logs = data.logs;
+          localStorage.setItem('logs', JSON.stringify(logs));
+          render();
+        }
+      } catch (err) {
+        console.error("Fetch failed, using local cache:", err);
+        render();
+      }
     }
 
     function render() {
@@ -171,16 +211,16 @@
             </div>
             <div>
               <button class="btn-take" onclick="logDose(${m.id})">Take Dose</button>
-              <button style="background:#ef4444; margin-top:0.25rem;" onclick="deleteMed(${m.id})">Remove</button>
+              <button class="btn-delete" onclick="deleteMed(${m.id})">Remove</button>
             </div>
           </div>
         `).join('');
       }
 
       if (logs.length === 0) {
-        logEl.innerHTML = '<p style="text-align:center; color:#64748b;">No dose history.</p>';
+        logEl.innerHTML = '<p style="text-align:center; color:#64748b;">No history recorded.</p>';
       } else {
-        logEl.innerHTML = logs.slice(0, 10).map(l => `
+        logEl.innerHTML = logs.slice(0, 15).map(l => `
           <div class="log-item">
             <div>
               <strong>${l.medName}</strong>
@@ -192,23 +232,21 @@
       }
     }
 
-    // Check reminders every 30 seconds
+    // Alarm checker loop
     setInterval(() => {
       const now = new Date();
       const currentTime = `${String(now.getHours()).padStart(2, '0')}:${String(now.getMinutes()).padStart(2, '0')}`;
-      
-      meds.forEach(m => {
-        if (m.time === currentTime && now.getSeconds() < 30) {
-          if (Notification.permission === 'granted') {
-            new Notification(`Pill Reminder: ${m.name}`, {
-              body: `Time to take ${m.dosage || 'your scheduled dose'}.`
-            });
+      if (now.getSeconds() < 30) {
+        meds.forEach(m => {
+          if (m.time === currentTime && Notification.permission === 'granted') {
+            new Notification(`Pill Reminder: ${m.name}`, { body: `Take ${m.dosage || 'dose'}.` });
           }
-        }
-      });
+        });
+      }
     }, 30000);
 
-    render();
+    // Initial boot
+    window.addEventListener('DOMContentLoaded', fetchSheetLogs);
   </script>
 </body>
 </html>
