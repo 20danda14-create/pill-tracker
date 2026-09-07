@@ -1,0 +1,214 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Pill Reminder & Usage Recorder</title>
+  <style>
+    :root {
+      --primary: #2563eb;
+      --bg: #f8fafc;
+      --card: #ffffff;
+      --text: #0f172a;
+      --border: #e2e8f0;
+      --success: #16a34a;
+    }
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+      background: var(--bg);
+      color: var(--text);
+      margin: 0;
+      padding: 1rem;
+      max-width: 600px;
+      margin-left: auto;
+      margin-right: auto;
+    }
+    h1, h2 { text-align: center; margin-bottom: 0.5rem; }
+    .card {
+      background: var(--card);
+      border: 1px solid var(--border);
+      border-radius: 12px;
+      padding: 1rem;
+      margin-bottom: 1rem;
+      box-shadow: 0 1px 3px rgba(0,0,0,0.05);
+    }
+    .form-group {
+      margin-bottom: 0.75rem;
+    }
+    label { display: block; font-size: 0.875rem; margin-bottom: 0.25rem; font-weight: 600; }
+    input, button {
+      width: 100%;
+      padding: 0.65rem;
+      border-radius: 8px;
+      border: 1px solid var(--border);
+      box-sizing: border-box;
+      font-size: 1rem;
+    }
+    button {
+      background: var(--primary);
+      color: white;
+      border: none;
+      font-weight: 600;
+      cursor: pointer;
+      margin-top: 0.5rem;
+    }
+    button:hover { opacity: 0.9; }
+    .btn-take { background: var(--success); }
+    .pill-item, .log-item {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      padding: 0.75rem 0;
+      border-bottom: 1px solid var(--border);
+    }
+    .pill-item:last-child, .log-item:last-child { border-bottom: none; }
+    .badge {
+      font-size: 0.75rem;
+      padding: 0.25rem 0.5rem;
+      border-radius: 999px;
+      background: #e2e8f0;
+    }
+  </style>
+</head>
+<body>
+
+  <h1>Pill Tracker</h1>
+
+  <div class="card">
+    <button onclick="requestNotificationPermission()">🔔 Enable Notification Reminders</button>
+  </div>
+
+  <div class="card">
+    <h2>Add Medication</h2>
+    <form id="med-form">
+      <div class="form-group">
+        <label for="med-name">Medication Name</label>
+        <input type="text" id="med-name" placeholder="e.g., Vitamin D3" required>
+      </div>
+      <div class="form-group">
+        <label for="med-dosage">Dosage / Notes</label>
+        <input type="text" id="med-dosage" placeholder="e.g., 1 tablet after breakfast">
+      </div>
+      <div class="form-group">
+        <label for="med-time">Reminder Time</label>
+        <input type="time" id="med-time" required>
+      </div>
+      <button type="submit">Save Medication</button>
+    </form>
+  </div>
+
+  <div class="card">
+    <h2>Active Schedule</h2>
+    <div id="med-list">No medications added yet.</div>
+  </div>
+
+  <div class="card">
+    <h2>Usage Log (History)</h2>
+    <div id="usage-log">No doses logged yet.</div>
+  </div>
+
+  <script>
+    let meds = JSON.parse(localStorage.getItem('meds') || '[]');
+    let logs = JSON.parse(localStorage.getItem('logs') || '[]');
+
+    function saveState() {
+      localStorage.setItem('meds', JSON.stringify(meds));
+      localStorage.setItem('logs', JSON.stringify(logs));
+      render();
+    }
+
+    function requestNotificationPermission() {
+      if ('Notification' in window) {
+        Notification.requestPermission().then(perm => {
+          alert(perm === 'granted' ? 'Notifications enabled!' : 'Permission denied.');
+        });
+      } else {
+        alert('Browser does not support desktop notifications.');
+      }
+    }
+
+    document.getElementById('med-form').addEventListener('submit', (e) => {
+      e.preventDefault();
+      const newMed = {
+        id: Date.now(),
+        name: document.getElementById('med-name').value,
+        dosage: document.getElementById('med-dosage').value,
+        time: document.getElementById('med-time').value
+      };
+      meds.push(newMed);
+      saveState();
+      e.target.reset();
+    });
+
+    function logDose(medId) {
+      const med = meds.find(m => m.id === medId);
+      if (!med) return;
+      logs.unshift({
+        medName: med.name,
+        dosage: med.dosage,
+        timestamp: new Date().toLocaleString()
+      });
+      saveState();
+    }
+
+    function deleteMed(medId) {
+      meds = meds.filter(m => m.id !== medId);
+      saveState();
+    }
+
+    function render() {
+      const listEl = document.getElementById('med-list');
+      const logEl = document.getElementById('usage-log');
+
+      if (meds.length === 0) {
+        listEl.innerHTML = '<p style="text-align:center; color:#64748b;">No active medications.</p>';
+      } else {
+        listEl.innerHTML = meds.map(m => `
+          <div class="pill-item">
+            <div>
+              <strong>${m.name}</strong> <span class="badge">${m.time}</span>
+              <div style="font-size:0.85rem; color:#64748b;">${m.dosage}</div>
+            </div>
+            <div>
+              <button class="btn-take" onclick="logDose(${m.id})">Take Dose</button>
+              <button style="background:#ef4444; margin-top:0.25rem;" onclick="deleteMed(${m.id})">Remove</button>
+            </div>
+          </div>
+        `).join('');
+      }
+
+      if (logs.length === 0) {
+        logEl.innerHTML = '<p style="text-align:center; color:#64748b;">No dose history.</p>';
+      } else {
+        logEl.innerHTML = logs.slice(0, 10).map(l => `
+          <div class="log-item">
+            <div>
+              <strong>${l.medName}</strong>
+              <div style="font-size:0.75rem; color:#64748b;">${l.dosage}</div>
+            </div>
+            <span class="badge" style="background:#dcfce7; color:#15803d;">${l.timestamp}</span>
+          </div>
+        `).join('');
+      }
+    }
+
+    // Check reminders every 30 seconds
+    setInterval(() => {
+      const now = new Date();
+      const currentTime = `${String(now.getHours()).padStart(2, '0')}:${String(now.getMinutes()).padStart(2, '0')}`;
+      
+      meds.forEach(m => {
+        if (m.time === currentTime && now.getSeconds() < 30) {
+          if (Notification.permission === 'granted') {
+            new Notification(`Pill Reminder: ${m.name}`, {
+              body: `Time to take ${m.dosage || 'your scheduled dose'}.`
+            });
+          }
+        }
+      });
+    }, 30000);
+
+    render();
+  </script>
+</body>
+</html>
